@@ -11,8 +11,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Range;
 import org.springframework.data.redis.connection.stream.Consumer;
 import org.springframework.data.redis.connection.stream.MapRecord;
@@ -26,10 +25,10 @@ import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+@Slf4j
 @Service
 public class RedisStreamEventBus {
 
-    private static final Logger log = LoggerFactory.getLogger(RedisStreamEventBus.class);
     private static final DefaultRedisScript<Long> TRIM_HISTORY_SCRIPT =
         new DefaultRedisScript<Long>(
             "redis.call('XADD', KEYS[1], '*', 'payload', ARGV[1]); return redis.call('XTRIM', KEYS[1], 'MAXLEN', '~', ARGV[2]);",

@@ -13,15 +13,13 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
+@Slf4j
 @Component
 public class MockAiWorker {
-
-    private static final Logger log = LoggerFactory.getLogger(MockAiWorker.class);
 
     private final RedisStreamEventBus eventBus;
     private final SessionRegistry sessionRegistry;
