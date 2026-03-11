@@ -1,7 +1,9 @@
 package com.aistreaming.framework.service;
 
+import lombok.Getter;
 import org.springframework.data.redis.connection.stream.RecordId;
 
+@Getter
 public class StreamEnvelope<T> {
 
     private final String streamKey;
@@ -14,21 +16,5 @@ public class StreamEnvelope<T> {
         this.group = group;
         this.recordId = recordId;
         this.payload = payload;
-    }
-
-    public String getStreamKey() {
-        return streamKey;
-    }
-
-    public String getGroup() {
-        return group;
-    }
-
-    public RecordId getRecordId() {
-        return recordId;
-    }
-
-    public T getPayload() {
-        return payload;
     }
 }
