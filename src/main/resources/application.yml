@@ -1,0 +1,38 @@
+spring:
+  application:
+    name: ai-streaming-framework
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 2s
+  main:
+    web-application-type: reactive
+
+server:
+  port: ${SERVER_PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+ai:
+  streaming:
+    node-id: ${STREAMING_NODE_ID:${spring.application.name}-${random.uuid}}
+    worker-stream-key: ai:worker:tasks
+    gateway-stream-prefix: ai:gateway:
+    session-history-prefix: ai:history:
+    session-route-prefix: ai:route:
+    session-sequence-prefix: ai:seq:
+    gateway-group-prefix: ai-gateway-
+    worker-consumer-group: ai-workers
+    history-max-length: 300
+    sink-replay-size: 128
+    pending-window-size: 1024
+    session-ttl-seconds: 180
+    poll-count: 50
+    poll-timeout-millis: 1000
+    route-refresh-millis: 30000
+    mock-token-delay-millis: 50
