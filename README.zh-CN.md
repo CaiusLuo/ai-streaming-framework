@@ -2,79 +2,145 @@
 
 [English](README.md)
 
-一个基于 Spring Boot、Redis Stream、SSE 和 WebSocket 的轻量级 AI 流式事件框架。
+AI Streaming Framework 是一个基于 Spring Boot、Redis Stream、SSE 和 WebSocket 的轻量级消息与流式传输框架。
 
-它适合中小型 AI 产品，重点解决流式输出里最容易踩坑的几类问题：消息乱序、重复推送、断线重连恢复，以及多实例网关下的 session 一致性。
+它现在支持两种使用方式：
 
-## 项目亮点
+1. 作为可复用 Starter，被其他 Spring Boot 项目直接引入。
+2. 作为当前仓库中的可运行 Demo，用于演示 SSE / WebSocket 的 AI 流式输出链路。
 
-- 通过 `session routing` 避免分布式网关重复推送
-- 通过 session 级 `sequence` 保证 token 顺序
-- 通过稳定 `eventId` 实现消息去重
-- 通过历史事件回放支持 SSE / WebSocket 重连恢复
-- SSE 与 WebSocket 共用同一条事件分发链路
-- 使用 Redis Stream Consumer Group 作为 worker 消费队列
+## 这个项目解决什么问题
+
+这个项目主要解决真实 AI 流式场景里最容易反复复制、反复踩坑的部分：
+
+- 每个项目都要重复写一套生产者 / 消费者接入代码
+- Worker 实现与业务代码强耦合，难以复用到别的项目
+- 重试、重连后消息顺序和去重不好处理
+- 多实例网关下同一个会话可能被重复推送
+- 业务服务想接入消息队列，却不得不复制大量基础设施代码
+
+## 核心能力
+
+- 基于 `@MessagingService`、`@Publisher`、`@Consumer` 的注解式接入
+- Spring Boot 自动装配，外部项目引入依赖后即可使用
+- 基于 Redis Stream 的消息总线，解耦生产与消费
+- 面向分布式网关的 session routing
+- 基于 sequence 的有序消息投递
+- 面向重试和重复消费的事件去重
+- SSE 与 WebSocket 共用同一条推送链路
+- 基于 session history 的断线重连补发
 
 ## 架构
 
 ```text
-Client
-  |- EventSource (SSE) / WebSocket
+业务 Service
+  |- @Publisher
   v
-SSE/WebSocket Gateway
+Redis Messaging Bus
+  |- ai:messaging:{binding}
+  v
+业务 Consumer / Worker
+  |- @Consumer
+  v
+Redis Stream Event Bus
+  |- ai:gateway:{nodeId}
+  |- ai:history:{sessionId}
+  v
+SSE / WebSocket Gateway
   |- Session Registry
   |- Ordered Event Processor
   |- Session Sink Hub
   v
-Redis Stream Event Bus
-  |- ai:worker:tasks
-  |- ai:gateway:{nodeId}
-  |- ai:history:{sessionId}
-  v
-AI Worker / LLM Adapter
+Client
 ```
 
-## 为什么要做这个项目
+## 作为 Starter 接入其他项目
 
-AI 流式输出在 Demo 阶段通常很顺，但一到真实业务就会出现这些问题：
+### 1. 引入依赖
 
-- token 顺序错乱
-- 重试后出现重复 chunk
-- 前端重连后重复渲染或漏渲染
-- 多实例部署时同一个 session 被多个节点重复推送
+将当前项目发布到你的 Maven 仓库后，其他 Spring Boot 项目可以直接引入：
 
-这个项目把这些真正影响稳定性的能力抽出来，做成一个可以复用的轻量框架。
+```xml
+<dependency>
+    <groupId>com.aistreaming</groupId>
+    <artifactId>ai-streaming-framework</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+</dependency>
+```
 
-## 核心能力
+### 2. 配置 Redis 与框架参数
 
-- `session routing`
-- `token streaming`
-- `SSE / WebSocket gateway`
-- `Redis Stream event bus`
-- `ordered message delivery`
-- `deduplication`
-- `reconnect replay`
-- `backpressure-friendly replay sink`
+```yaml
+spring:
+  data:
+    redis:
+      host: localhost
+      port: 6379
 
-## 关键设计
+ai:
+  streaming:
+    node-id: order-service-1
+    messaging-enabled: true
+    messaging-stream-prefix: ai:messaging:
+    messaging-consumer-group-prefix: ai:messaging-group:
+```
 
-### 1. Session Routing
+### 3. 用 `@Publisher` 发布消息
 
-每个 `sessionId` 会在 Redis 中映射到一个 `nodeId`。Worker 产生的事件会被投递到对应节点的 `ai:gateway:{nodeId}`，从而保证同一个会话只由一个网关实例负责推送。
+```java
+import com.aistreaming.framework.messaging.annotation.MessagingService;
+import com.aistreaming.framework.messaging.annotation.Publisher;
+import com.aistreaming.framework.messaging.core.MessagePublishResult;
+import org.springframework.stereotype.Service;
 
-### 2. 顺序保证
+@Service
+@MessagingService("orderMessaging")
+public class OrderPublisher {
 
-每个 session 使用 Redis 维护独立的序号。一次请求在发送 token 前会预留连续的 sequence block，网关侧再通过 pending window 做乱序整理，最后按顺序输出。
+    @Publisher(binding = "order.created", invokeTarget = false)
+    public MessagePublishResult publish(OrderCreatedEvent event) {
+        return null;
+    }
+}
+```
 
-### 3. 消息去重
+### 4. 用 `@Consumer` 消费消息
 
-每个 chunk 都使用稳定的 `eventId`。这样在重试、重复消费或重复投递时，网关可以安全丢弃重复事件。
+```java
+import com.aistreaming.framework.messaging.annotation.Consumer;
+import com.aistreaming.framework.messaging.annotation.MessagingService;
+import org.springframework.stereotype.Service;
 
-### 4. Reconnect 恢复
+@Service
+@MessagingService("orderWorker")
+public class OrderCreatedConsumer {
 
-最近的 session 事件会保存在 `ai:history:{sessionId}`。客户端断线后如果带着 `Last-Event-ID` 或 `lastSequence` 重连，网关会先补发缺失区间，再继续 live stream。
+    @Consumer(binding = "order.created")
+    public void handle(OrderCreatedEvent event) {
+        // 业务处理逻辑
+    }
+}
+```
 
-## API 示例
+## 注解规则
+
+- `@MessagingService` 用于标记参与消息体系的 Spring Bean。
+- `@Publisher` 会拦截方法调用，并把方法参数发布到 Redis Stream。
+- `@Consumer` 会为指定 binding 注册后台消费循环。
+- `binding` 不填写时，默认值为 `serviceName.methodName`。
+- `@Consumer` 的 `group` 不填写时，默认值为 `ai:messaging-group:{serviceName}.{methodName}`。
+- `@Publisher(invokeTarget = false)` 表示不执行原方法体，只做消息发布。
+- 当前 `@Publisher` / `@Consumer` 方法支持 `0` 或 `1` 个参数；如果需要多个字段，建议封装成 DTO。
+
+## 当前仓库中的 Demo 链路
+
+这个仓库仍然保留了可运行的 AI 流式输出 Demo：
+
+- `ChatCommandService` 通过注解发布器发布 `PromptTask`
+- `MockAiWorker` 通过 `@Consumer` 消费 `PromptTask`
+- Worker 产出的事件继续走原有的 Redis 事件总线，再推送到 SSE / WebSocket 客户端
+
+## Demo API 示例
 
 ### 注册 Session
 
@@ -124,16 +190,24 @@ docker compose up redis -d
 mvn spring-boot:run
 ```
 
+### 运行测试
+
+```bash
+mvn "-Dmaven.repo.local=.m2/repository" test
+```
+
 ## 目录结构
 
-- `src/main/java/.../gateway`：SSE 与 WebSocket 网关入口
-- `src/main/java/.../service`：路由、顺序、去重、事件总线等核心逻辑
-- `src/main/java/.../worker`：模拟 AI token streaming 的 worker
-- `src/test/java/...`：顺序与去重相关测试
+- `src/main/java/com/aistreaming/autoconfigure`：Spring Boot Starter 自动装配
+- `src/main/java/com/aistreaming/framework/messaging`：注解定义与消息运行时
+- `src/main/java/com/aistreaming/framework/gateway`：SSE 与 WebSocket 推送入口
+- `src/main/java/com/aistreaming/framework/service`：路由、有序投递、session 管理、事件总线等核心逻辑
+- `src/main/java/com/aistreaming/framework/worker`：Demo Worker 实现
+- `src/test/java`：消息运行时和顺序投递相关测试
 
 ## 发布为 Maven 依赖
 
-先修改 `pom.xml` 中的 GitHub 仓库配置：
+先修改 `pom.xml` 中的 GitHub 仓库信息：
 
 ```xml
 <github.owner>YOUR_GITHUB_OWNER</github.owner>
@@ -146,9 +220,9 @@ mvn spring-boot:run
 mvn deploy -s settings-example.xml
 ```
 
-## 适合场景
+## 适合的场景
 
-- 轻量 AI 对话产品
-- 个人项目或小型业务
-- 需要 SSE 重连恢复和消息一致性的场景
-- 希望将流式 AI 基础设施封装成可复用框架的团队
+- 希望在多个 Spring Boot 服务里复用消息基础设施的团队
+- 需要 SSE 或 WebSocket 流式输出能力的轻量 AI 应用
+- 不想重复手写 Redis Stream 接入代码、希望用注解快速集成的项目
+- 想快速搭一个具备重连补发、有序投递能力的 Demo 或原型系统

@@ -2,79 +2,145 @@
 
 [简体中文](README.zh-CN.md)
 
-A lightweight AI streaming event framework built with Spring Boot, Redis Stream, SSE, and WebSocket.
+AI Streaming Framework is a lightweight Spring Boot based messaging and streaming framework built on Redis Stream, SSE, and WebSocket.
 
-It is designed for small to medium AI products that need reliable token streaming without building a heavy infrastructure layer from scratch. The framework focuses on message consistency across reconnects, retries, and multi-instance deployment.
+It can be used in two ways:
+
+1. As a reusable starter that other Spring Boot projects import directly.
+2. As the runnable demo application in this repository for SSE/WebSocket based AI token streaming.
+
+## What It Solves
+
+This project focuses on the parts that usually become messy in real AI streaming systems:
+
+- repeated queue and consumer boilerplate across projects
+- hard-coded worker implementations that are difficult to reuse
+- inconsistent token delivery after retry or reconnect
+- duplicated pushes in multi-instance gateway deployment
+- business services that need queue access but should not copy infrastructure code
 
 ## Highlights
 
-- Session-aware routing to avoid duplicate pushes across distributed gateway instances
-- Ordered token delivery with per-session sequence control
-- Event deduplication for retries and repeated stream consumption
-- SSE reconnect recovery with history replay
-- Shared event pipeline for both SSE and WebSocket clients
-- Redis Stream consumer groups for worker-side queue processing
+- Annotation-driven integration with `@MessagingService`, `@Publisher`, and `@Consumer`
+- Spring Boot auto-configuration for plug-and-play starter usage
+- Redis Stream based messaging bus for producer/consumer decoupling
+- Session-aware routing for distributed gateway delivery
+- Ordered message delivery with per-session sequence control
+- Event deduplication for retry and repeated consumption scenarios
+- Shared SSE and WebSocket delivery pipeline
+- Reconnect replay based on session history
 
 ## Architecture
 
 ```text
-Client
-  |- EventSource (SSE) / WebSocket
+Business Service
+  |- @Publisher
   v
-SSE/WebSocket Gateway
+Redis Messaging Bus
+  |- ai:messaging:{binding}
+  v
+Business Consumer / Worker
+  |- @Consumer
+  v
+Redis Stream Event Bus
+  |- ai:gateway:{nodeId}
+  |- ai:history:{sessionId}
+  v
+SSE / WebSocket Gateway
   |- Session Registry
   |- Ordered Event Processor
   |- Session Sink Hub
   v
-Redis Stream Event Bus
-  |- ai:worker:tasks
-  |- ai:gateway:{nodeId}
-  |- ai:history:{sessionId}
-  v
-AI Worker / LLM Adapter
+Client
 ```
 
-## Why This Project
+## Starter Usage
 
-Streaming AI output looks simple until production issues show up:
+### 1. Add Dependency
 
-- tokens arrive out of order
-- retries create duplicate chunks
-- reconnects replay the wrong range
-- multiple gateway instances push the same session twice
+After publishing this project to your Maven repository, import it in another Spring Boot application:
 
-This project packages those hard parts into one lightweight framework so you can reuse the same streaming core across small AI applications.
+```xml
+<dependency>
+    <groupId>com.aistreaming</groupId>
+    <artifactId>ai-streaming-framework</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+</dependency>
+```
 
-## Core Capabilities
+### 2. Configure Redis and Framework Properties
 
-- `session routing`
-- `token streaming`
-- `SSE / WebSocket gateway`
-- `Redis Stream event bus`
-- `ordered message delivery`
-- `deduplication`
-- `reconnect replay`
-- `backpressure-friendly replay sink`
+```yaml
+spring:
+  data:
+    redis:
+      host: localhost
+      port: 6379
 
-## How It Works
+ai:
+  streaming:
+    node-id: order-service-1
+    messaging-enabled: true
+    messaging-stream-prefix: ai:messaging:
+    messaging-consumer-group-prefix: ai:messaging-group:
+```
 
-### Session Routing
+### 3. Publish Messages with `@Publisher`
 
-Each `sessionId` is mapped to a gateway `nodeId` in Redis. Worker events are routed back to the owning node through `ai:gateway:{nodeId}`, which keeps one session bound to one active delivery node.
+```java
+import com.aistreaming.framework.messaging.annotation.MessagingService;
+import com.aistreaming.framework.messaging.annotation.Publisher;
+import com.aistreaming.framework.messaging.core.MessagePublishResult;
+import org.springframework.stereotype.Service;
 
-### Ordered Delivery
+@Service
+@MessagingService("orderMessaging")
+public class OrderPublisher {
 
-Each session uses a Redis-backed sequence counter. A request reserves a stable sequence block before tokens are emitted, and the gateway reorders pending events before delivery.
+    @Publisher(binding = "order.created", invokeTarget = false)
+    public MessagePublishResult publish(OrderCreatedEvent event) {
+        return null;
+    }
+}
+```
 
-### Deduplication
+### 4. Consume Messages with `@Consumer`
 
-Each emitted chunk uses a stable `eventId`. This allows the gateway to ignore repeated chunks caused by retries or duplicate consumption.
+```java
+import com.aistreaming.framework.messaging.annotation.Consumer;
+import com.aistreaming.framework.messaging.annotation.MessagingService;
+import org.springframework.stereotype.Service;
 
-### Reconnect Recovery
+@Service
+@MessagingService("orderWorker")
+public class OrderCreatedConsumer {
 
-Recent session events are stored in `ai:history:{sessionId}`. When the client reconnects with `Last-Event-ID` or `lastSequence`, the gateway replays only the missing range, then resumes live streaming.
+    @Consumer(binding = "order.created")
+    public void handle(OrderCreatedEvent event) {
+        // business logic
+    }
+}
+```
 
-## API Overview
+## Annotation Rules
+
+- `@MessagingService` marks a Spring bean as a messaging participant.
+- `@Publisher` intercepts method calls and publishes the method argument to Redis Stream.
+- `@Consumer` registers a background consumer loop for the declared binding.
+- If `binding` is omitted, the default value is `serviceName.methodName`.
+- If `group` is omitted on `@Consumer`, the default value is `ai:messaging-group:{serviceName}.{methodName}`.
+- `@Publisher(invokeTarget = false)` means the method body is skipped and only message publishing is executed.
+- Publisher and consumer methods currently support zero or one parameter. If you need multiple fields, wrap them in a DTO.
+
+## Demo Flow In This Repository
+
+The repository still contains a runnable AI streaming demo:
+
+- `ChatCommandService` publishes `PromptTask` through the annotation-based publisher.
+- `MockAiWorker` consumes `PromptTask` through `@Consumer`.
+- Worker output is routed to SSE/WebSocket clients through the existing event bus and gateway pipeline.
+
+## Demo API Overview
 
 ### Register a Session
 
@@ -124,12 +190,20 @@ docker compose up redis -d
 mvn spring-boot:run
 ```
 
+### Run Tests
+
+```bash
+mvn "-Dmaven.repo.local=.m2/repository" test
+```
+
 ## Project Structure
 
-- `src/main/java/.../gateway`: SSE and WebSocket delivery endpoints
-- `src/main/java/.../service`: routing, ordering, deduplication, and event bus logic
-- `src/main/java/.../worker`: mock AI streaming worker
-- `src/test/java/...`: ordering and deduplication tests
+- `src/main/java/com/aistreaming/autoconfigure`: Spring Boot starter auto-configuration
+- `src/main/java/com/aistreaming/framework/messaging`: annotations and messaging runtime
+- `src/main/java/com/aistreaming/framework/gateway`: SSE and WebSocket delivery endpoints
+- `src/main/java/com/aistreaming/framework/service`: routing, ordering, session, and event bus logic
+- `src/main/java/com/aistreaming/framework/worker`: demo worker implementation
+- `src/test/java`: messaging runtime and ordered delivery tests
 
 ## Publish as a Maven Package
 
@@ -148,7 +222,7 @@ mvn deploy -s settings-example.xml
 
 ## Good Fit For
 
-- Lightweight AI chat products
-- Personal or small business AI tools
-- SSE-first applications that need reconnect safety
-- Teams that want a reusable streaming framework instead of reimplementing infrastructure logic
+- Teams that want to reuse queue and streaming infrastructure across multiple Spring Boot services
+- Lightweight AI applications that need SSE or WebSocket streaming
+- Projects that want annotation-based queue integration instead of repeated hand-written Redis code
+- Demo or prototype systems that need reliable reconnect and ordered token delivery without a heavy platform
