@@ -28,6 +28,9 @@ ai:
     session-sequence-prefix: ai:seq:
     gateway-group-prefix: ai-gateway-
     worker-consumer-group: ai-workers
+    messaging-enabled: true
+    messaging-stream-prefix: ai:messaging:
+    messaging-consumer-group-prefix: ai:messaging-group:
     history-max-length: 300
     sink-replay-size: 128
     pending-window-size: 1024

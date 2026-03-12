@@ -12,11 +12,12 @@ import org.springframework.util.StringUtils;
 public class ChatCommandService {
 
     private final SessionRegistry sessionRegistry;
-    private final RedisStreamEventBus eventBus;
+    private final PromptTaskMessagingPublisher promptTaskMessagingPublisher;
 
-    public ChatCommandService(SessionRegistry sessionRegistry, RedisStreamEventBus eventBus) {
+    public ChatCommandService(SessionRegistry sessionRegistry,
+                              PromptTaskMessagingPublisher promptTaskMessagingPublisher) {
         this.sessionRegistry = sessionRegistry;
-        this.eventBus = eventBus;
+        this.promptTaskMessagingPublisher = promptTaskMessagingPublisher;
     }
 
     public Map<String, String> submit(ChatRequest request) {
@@ -32,7 +33,7 @@ public class ChatCommandService {
         task.setPrompt(request.getPrompt());
         task.setRouteNodeId(owner);
         task.setCreatedAt(System.currentTimeMillis());
-        eventBus.publishPromptTask(task);
+        promptTaskMessagingPublisher.publish(task);
 
         Map<String, String> response = new LinkedHashMap<String, String>();
         response.put("requestId", task.getRequestId());

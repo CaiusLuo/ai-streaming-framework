@@ -1,5 +1,6 @@
 package com.aistreaming.framework.config;
 
+import java.util.UUID;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -9,7 +10,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "ai.streaming")
 public class StreamingProperties {
 
-    private String nodeId;
+    private String nodeId = "node-" + UUID.randomUUID().toString();
     private String workerStreamKey = "ai:worker:tasks";
     private String gatewayStreamPrefix = "ai:gateway:";
     private String sessionHistoryPrefix = "ai:history:";
@@ -17,6 +18,9 @@ public class StreamingProperties {
     private String sessionSequencePrefix = "ai:seq:";
     private String gatewayGroupPrefix = "ai-gateway-";
     private String workerConsumerGroup = "ai-workers";
+    private boolean messagingEnabled = true;
+    private String messagingStreamPrefix = "ai:messaging:";
+    private String messagingConsumerGroupPrefix = "ai:messaging-group:";
     private int historyMaxLength = 300;
     private int sinkReplaySize = 128;
     private int pendingWindowSize = 1024;

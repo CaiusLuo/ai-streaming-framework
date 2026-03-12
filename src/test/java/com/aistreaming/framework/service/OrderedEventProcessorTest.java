@@ -14,8 +14,8 @@ class OrderedEventProcessorTest {
         OrderedEventProcessor processor = new OrderedEventProcessor(new StreamingProperties());
         List<Long> delivered = new ArrayList<Long>();
 
-        processor.process(event("session-1", 2L, "evt-2"), e -> delivered.add(e.getSequence()));
         processor.process(event("session-1", 1L, "evt-1"), e -> delivered.add(e.getSequence()));
+        processor.process(event("session-1", 2L, "evt-2"), e -> delivered.add(e.getSequence()));
         processor.process(event("session-1", 2L, "evt-2"), e -> delivered.add(e.getSequence()));
         processor.process(event("session-1", 3L, "evt-3"), e -> delivered.add(e.getSequence()));
 
