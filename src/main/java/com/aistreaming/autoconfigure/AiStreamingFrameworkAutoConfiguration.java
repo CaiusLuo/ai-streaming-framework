@@ -7,15 +7,15 @@ import com.aistreaming.framework.messaging.core.MessagingTemplate;
 import com.aistreaming.framework.messaging.core.RedisMessagingBus;
 import com.aistreaming.framework.support.JsonCodec;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
-@Configuration(proxyBeanMethods = false)
+@AutoConfiguration
 @ConditionalOnClass(StringRedisTemplate.class)
 @EnableConfigurationProperties(StreamingProperties.class)
 public class AiStreamingFrameworkAutoConfiguration {
@@ -45,7 +45,7 @@ public class AiStreamingFrameworkAutoConfiguration {
     @Bean
     @ConditionalOnProperty(prefix = "ai.streaming", name = "messaging-enabled", havingValue = "true", matchIfMissing = true)
     @ConditionalOnMissingBean
-    public MessagingPublisherBeanPostProcessor messagingPublisherBeanPostProcessor(MessagingTemplate messagingTemplate) {
+    public static MessagingPublisherBeanPostProcessor messagingPublisherBeanPostProcessor(MessagingTemplate messagingTemplate) {
         return new MessagingPublisherBeanPostProcessor(messagingTemplate);
     }
 
@@ -58,3 +58,4 @@ public class AiStreamingFrameworkAutoConfiguration {
         return new MessagingConsumerContainer(redisMessagingBus, jsonCodec, properties);
     }
 }
+

@@ -3,7 +3,7 @@ package com.aistreaming.framework.gateway;
 import com.aistreaming.framework.domain.SessionRegisterRequest;
 import com.aistreaming.framework.domain.SessionRegistration;
 import com.aistreaming.framework.service.SessionSinkHub;
-import javax.validation.Valid;
+import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.GetMapping;
